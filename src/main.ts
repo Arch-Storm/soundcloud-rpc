@@ -11,7 +11,7 @@ const Store = require("electron-store");
 
 const store = new Store();
 const rpc = new DiscordRPCClient({ transport: "ipc" });
-const clientId = "1090770350251458592";
+const clientId = "1036656884066820267";
 
 rpc.login({ clientId }).catch(console.error);
 
@@ -71,33 +71,64 @@ async function createWindow() {
       if (isPlaying) {
         // Retrieve the track title using a script injected into the page
         const trackInfo = await mainWindow.webContents.executeJavaScript(`
-        new Promise(resolve => {
-          const titleEl = document.querySelector('.playbackSoundBadge__titleLink');
-          const authorEl = document.querySelector('.playbackSoundBadge__lightLink');
-          if (titleEl && authorEl) {
-            resolve({title: titleEl.innerText, author: authorEl.innerText});
-          } else {
-            resolve({title: '', author: ''});
-          }
-        });
-      `);
+          new Promise(resolve => {
+            const titleEl = document.querySelector('.playbackSoundBadge__titleLink');
+            const authorEl = document.querySelector('.playbackSoundBadge__lightLink');
+            if (titleEl && authorEl) {
+              resolve({title: titleEl.innerText, author: authorEl.innerText});
+            } else {
+              resolve({title: '', author: ''});
+            }
+          });
+        `);
 
         // Retrieve the URL of the song's artwork image
         const artworkUrl = await mainWindow.webContents.executeJavaScript(`
-        new Promise(resolve => {
-          const artworkEl = document.querySelector('.playbackSoundBadge__avatar .image__lightOutline span');
-          if (artworkEl) {
-            const url = artworkEl.style.backgroundImage.replace('url("', '').replace('")', '');
-            resolve(url);
-          } else {
-            resolve('');
-          }
-        });
-      `);
+          new Promise(resolve => {
+            const artworkEl = document.querySelector('.playbackSoundBadge__avatar .image__lightOutline span');
+            if (artworkEl) {
+              const url = artworkEl.style.backgroundImage.replace('url("', '').replace('")', '');
+              resolve(url);
+            } else {
+              resolve('');
+            }
+          });
+        `);
+
+        // Retrieve the elapsed time of the song
+        const elapsedTime = await mainWindow.webContents.executeJavaScript(`
+          new Promise(resolve => {
+            const elapsedEl = document.querySelector('.playbackTimeline__timePassed span:last-child');
+            if (elapsedEl) {
+              resolve(elapsedEl.innerText);
+            } else {
+              resolve('');
+            }
+          });
+        `);
+
+        // Retrieve the total time of the song
+        const totalTime = await mainWindow.webContents.executeJavaScript(`
+          new Promise(resolve => {
+            const totalTimeEl = document.querySelector('.playbackTimeline__duration span:last-child');
+            if (totalTimeEl) {
+              resolve(totalTimeEl.innerText);
+            } else {
+              resolve('');
+            }
+          });
+        `);
 
         const currentTrack = trackInfo.title
           .replace(/\n.*/s, "")
           .replace("Current track:", "");
+
+        const elapsedMilliseconds = elapsedTime.length > 5
+          ? parseInt(elapsedTime.split(":")[0]) * 3600000 + parseInt(elapsedTime.split(":")[1]) * 60000 + parseInt(elapsedTime.split(":")[2]) * 1000
+          : parseInt(elapsedTime.split(":")[0]) * 60000 + parseInt(elapsedTime.split(":")[1]) * 1000;
+        const totalMilliseconds = totalTime.length > 5
+          ? parseInt(totalTime.split(":")[0]) * 3600000 + parseInt(totalTime.split(":")[1]) * 60000 + parseInt(totalTime.split(":")[2]) * 1000
+          : parseInt(totalTime.split(":")[0]) * 60000 + parseInt(totalTime.split(":")[1]) * 1000;
 
         // Update rich presence with the currently playing song
         rpc.setActivity({
@@ -105,8 +136,8 @@ async function createWindow() {
           state: `by ${shortenString(trackInfo.author)}`,
           largeImageKey: artworkUrl.replace("50x50.", "500x500."),
           largeImageText: currentTrack,
-          smallImageKey: "soundcloud-logo",
-          smallImageText: "SoundCloud",
+          startTimestamp: Date.now() - elapsedMilliseconds,
+          endTimestamp: Date.now() + (totalMilliseconds - elapsedMilliseconds),
           instance: false,
         });
       } else {
@@ -117,15 +148,13 @@ async function createWindow() {
             state: "Paused",
             largeImageKey: "idling",
             largeImageText: "Paused",
-            smallImageKey: "soundcloud-logo",
-            smallImageText: "SoundCloud",
             instance: false,
           });
         } else {
           rpc.clearActivity();
         }
       }
-    }, 10000); // Check every 10 seconds
+    }, 15000); // Check every 10 seconds
   });
 
   // Emitted when the window is closed.
